@@ -1,12 +1,13 @@
 import java.io.FileNotFoundException;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Objects;
-import java.util.PriorityQueue;
+import java.util.*;
 
 public class Scheduler {
     PriorityQueue<Process> readyQueue;
     PriorityQueue<Process> eventQueue;
+
+    ArrayList<Integer> pidList;
+    HashMap<Integer,Integer> pidToIndex;
+    HashMap<Integer,Integer> indexToPid;
 
     boolean verbose = false;
     String algo;
@@ -15,6 +16,10 @@ public class Scheduler {
     int[] waitingTime;
 
     Scheduler(String algo){
+        pidToIndex = new HashMap<>();
+        pidList = new ArrayList<>();
+        indexToPid = new HashMap<>();
+
         eventQueue = new PriorityQueue<>(new Comparator<Process>() {
             @Override
             public int compare(Process o1, Process o2) {
@@ -81,11 +86,26 @@ public class Scheduler {
             //move process from eventQueue to readyQueue
             //System.out.println(completed);
 
+/*
+            if(curTime == 4400){
+                System.out.println("!!!!!4400 cur time: print eventQueue");
+                while(eventQueue.peek() != null){
+                    Process p = eventQueue.remove();
+                    System.out.print(p.pid + " ");
+                }
+            }
+
+ */
+
+
             while(eventQueue.peek() != null && eventQueue.peek().nextEventTime() <= curTime){
                 Process p = eventQueue.remove();
                 readyQueue.add(p);
-                // System.out.println("removed & added " + p.pid);
+                 //System.out.println("removed & added " + p.pid + " when time is " + curTime);
+                //System.out.println("nextBurstTime for " + p.pid + " : " + p.nextEventTime());
             }
+
+
 
             //System.out.println("current event size: " + eventQueue.size());
 
@@ -93,50 +113,52 @@ public class Scheduler {
                 if(readyQueue.peek()!= null &&
                         readyQueue.peek().estimatedBurst() < currentProcess.estimatedCurrBurstLeft){
                     stateChange = true;
+                    //print preempted end time
+                    System.out.println(curTime);
 
                     //preempted switch between processes
-                    if(currBurstTimeLeft != 0){ // current burst time gets preempted
+                    //if(currBurstTimeLeft != 0){ // current burst time gets preempted
                         //modify actual current burst time
 
                         currentProcess.burstTimes.set(currentProcess.currBurstIndex,
                                 currentProcess.burstTimes.get(currentProcess.currBurstIndex) -
                                         currentProcess.timeSinceRunning) ;
 
+                        //System.out.println("current process preempted: " + currentProcess.pid + " when time is " + curTime);
+                        //System.out.println("running time left: " + currentProcess.estimatedCurrBurstLeft);
+
                         //ready starting from current time
                         currentProcess.nextEventTime = curTime;
                         //change to new process
-                        eventQueue.add(currentProcess);
+
+                        Process preemptedP = currentProcess;
+                        //eventQueue.add(currentProcess);
                         currentProcess = readyQueue.remove();
-                    }else{
-                        //current burst time ran out
-                        currentProcess.timeSinceRunning = 0;
-                        currentProcess.currBurstIndex++;
+                        readyQueue.add(preemptedP);
 
 
-                        if(!currentProcess.completed()){
-
-                            currentProcess.nextEventTime = curTime + currentProcess.idleTimes.get(currentProcess.currIdleIndex);
-                            currentProcess.currIdleIndex = currentProcess.currBurstIndex;
-                            if(!currentProcess.completed()){
-                                eventQueue.add(currentProcess);
-                            }else{
-                                waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
-                                completed++;
-                            }
-                        }else{
-                            waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
-                            completed++;
+                        currBurstTimeLeft = currentProcess.burstTimes.get(currentProcess.currBurstIndex);
+                       // System.out.println("replaced by: " + currentProcess.pid + " with estimated b time: " + currentProcess.estimatedBurst());
+                    if(verbose){
+                        System.out.println("\nCurrent time: " + curTime);
+                        // System.out.println("current burst index: " +  currentProcess.currBurstIndex);
+                        System.out.println("Estimated burst time: ");
+                        for (Process P:
+                                readyQueue) {
+                            System.out.println("Process " + P.pid + ": " + P.estimatedBurst());
                         }
-                        currentProcess = readyQueue.remove();
-
-
+                        for (Process P:
+                                eventQueue) {
+                            System.out.println("Process " + P.pid + ": " + P.estimatedBurst());
+                        }
+                        System.out.println("Process " + currentProcess.pid + ": " + currentProcess.estimatedBurst());
+                        //System.out.println(" Estimated burst time: " + currentProcess.estimatedBurst());
                     }
-                    if(readyQueue.isEmpty()){
-                        changeToIdle = true;
-                    }
+                        System.out.print(currentProcess.pid + " " + curTime + " ");
+
                 }else if(currBurstTimeLeft == 0){ //not preempted but burst time ran out
-
-                    stateChange = true;
+                    //System.out.println("current burst time ran out for pid and not preempted = " + currentProcess.pid + "when time is " + curTime);
+                    System.out.println(curTime);
 
                     currentProcess.currBurstIndex++;
                     currentProcess.timeSinceRunning = 0;
@@ -147,59 +169,67 @@ public class Scheduler {
                         if(!currentProcess.completed()){
                             eventQueue.add(currentProcess);
                         }else{
-                            waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                            //last is idle
+                            waitingTime[pidToIndex.get(currentProcess.pid)] = curTime +
+                                    currentProcess.idleTimes.get(currentProcess.idleTimes.size()-1)
+                                    - currentProcess.arrivalTime - currentProcess.totalTime();
                             completed++;
                         }
                     }else{
-                        waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                        //last is Burst
+                        waitingTime[pidToIndex.get(currentProcess.pid)] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
                         completed++;
                     }
                     currentProcess = null;
 
-                    if(readyQueue.isEmpty()){
+                    if(readyQueue.isEmpty() && !eventQueue.isEmpty()){
+                        System.out.print("Idle " + curTime + " ");
                         changeToIdle = true;
-                    }
-                }
 
 
+                    }//if(readyQueue.isEmpty()
+                }//else if(currBurstTimeLeft == 0)
             }
 
-            if(stateChange){
-                System.out.println(curTime);
-            }else if(currentProcess == null && !readyQueue.isEmpty() && curTime != idleStart){
-                System.out.println(curTime);
-            }
-
-            //readyQueue.remove(currentProcess);
-
-            if(changeToIdle && completed !=numOfProcesses){
-
-                System.out.print("Idle " + curTime + " ");
-                changeToIdle = false;
-                stateChange = false;
-            }
-
+            //add new process from idle state
             if(currentProcess == null && !readyQueue.isEmpty()){
-
 
                 currentProcess = readyQueue.remove();
                 currentProcess.estimatedCurrBurstLeft = currentProcess.estimatedBurst();
 
                 currBurstTimeLeft = currentProcess.burstTimes.get(currentProcess.currBurstIndex);
                 //print start time
-                System.out.print(currentProcess.pid + " ");
+
+                if(changeToIdle){
+                    //print idle end time
+                    System.out.println(curTime);
+                    changeToIdle = false;
+                }
 
                 if(verbose){
-                    System.out.print("current time: " + curTime);
-                   // System.out.println("current burst index: " +  currentProcess.currBurstIndex);
-                    System.out.println(" Estimated burst time: " + currentProcess.estimatedBurst());
+                    System.out.println("\nCurrent time: " + curTime);
+                    // System.out.println("current burst index: " +  currentProcess.currBurstIndex);
+                    System.out.println("Estimated burst time: ");
+                    for (Process P:
+                         readyQueue) {
+                        System.out.println("Process " + P.pid + ": " + P.estimatedBurst());
+                    }
+                    for (Process P:
+                            eventQueue) {
+                        System.out.println("Process " + P.pid + ": " + P.estimatedBurst());
+                    }
+                    System.out.println("Process " + currentProcess.pid + ": " + currentProcess.estimatedBurst());
+                    //System.out.println(" Estimated burst time: " + currentProcess.estimatedBurst());
                 }
+
+                System.out.print(currentProcess.pid + " ");
+
+
 
                 System.out.print(curTime+ " ");
                 stateChange = false;
 
             }
-
             curTime++;
             currBurstTimeLeft--;
             if(currentProcess != null){
@@ -208,10 +238,10 @@ public class Scheduler {
             }
 
         }//while
-        System.out.println("end");
+        System.out.println("\nend");
         System.out.println("Waiting time:");
         for(int i = 0; i < numOfProcesses; i++){
-            System.out.println("Process " + (i+1) +" : " + waitingTime[i]);
+            System.out.println("Process " + indexToPid.get(i) +" : " + waitingTime[i]);
         }
     }
 
@@ -228,23 +258,14 @@ public class Scheduler {
             @Override
             public int compare(Process o1, Process o2) {
                 if(o1.estimatedBurst() < o2.estimatedBurst()){
-                    boolean answer = o1.estimatedBurst() == o2.estimatedBurst();
-                    //System.out.println( answer );
-                    //System.out.println("compare estBurst: " + o1.pid + ":" +o1.estimatedBurst() + " with "
-                            //+ o2.pid + ":" +o2.estimatedBurst() + " ,put " + o1.pid + " in front");
                     return -1;
                 }else if(o1.estimatedBurst() > o2.estimatedBurst()){
                     boolean answer = o1.estimatedBurst() == o2.estimatedBurst();
-                    //System.out.println( answer );
-                    //System.out.println("compare estBurst: " + o1.pid + ":" +o1.estimatedBurst() + " with "
-                           // + o2.pid + ":" +o2.estimatedBurst() + " ,put " + o2.pid + " in front");
                     return 1;
                 }else{
                     if(o1.pid < o2.pid){
-                       // System.out.println("compare pid: " + o1.pid + " with " + o2.pid + " ,put " + o1.pid + " in front");
                         return -1;
                     }else {
-                      //  System.out.println("compare pid: " + o1.pid + " with " + o2.pid + " ,put " + o2.pid + " in front");
                         return 1;
                     }
                 }
@@ -293,11 +314,13 @@ public class Scheduler {
                     if(!currentProcess.completed()){
                         eventQueue.add(currentProcess);
                     }else{
-                        waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                        waitingTime[pidToIndex.get(currentProcess.pid)] =
+                                curTime + currentProcess.idleTimes.get(currentProcess.idleTimes.size()-1)
+                                - currentProcess.arrivalTime - currentProcess.totalTime();
                         completed++;
                     }
                 }else{
-                    waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                    waitingTime[pidToIndex.get(currentProcess.pid)] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
                     completed++;
                 }
 
@@ -320,14 +343,25 @@ public class Scheduler {
 
                 currBurstTimeLeft = currentProcess.burstTimes.get(currentProcess.currBurstIndex);
                 //print start time
-                System.out.println(currentProcess.pid);
+
 
                 if(verbose){
-                    System.out.print("current time: " + curTime);
-                    System.out.println(" Estimated burst time: " + currentProcess.estimatedBurst());
+                    System.out.println("\nCurrent time: " + curTime);
+                    // System.out.println("current burst index: " +  currentProcess.currBurstIndex);
+                    System.out.println("Estimated burst time: ");
+                    for (Process P:
+                            readyQueue) {
+                        System.out.println("Process " + P.pid + ": " + P.estimatedBurst());
+                    }
+                    for (Process P:
+                            eventQueue) {
+                        System.out.println("Process " + P.pid + ": " + P.estimatedBurst());
+                    }
+                    System.out.println("Process " + currentProcess.pid + ": " + currentProcess.estimatedBurst());
+                    //System.out.println(" Estimated burst time: " + currentProcess.estimatedBurst());
                 }
 
-                System.out.print(curTime+ " ");
+                System.out.print(currentProcess.pid + " " + curTime+ " ");
 
             }
 
@@ -337,7 +371,7 @@ public class Scheduler {
         System.out.println("end");
         System.out.println("Waiting time:");
         for(int i = 0; i < numOfProcesses; i++){
-            System.out.println("Process " + (i+1) +" : " + waitingTime[i]);
+            System.out.println("Process " + indexToPid.get(i) +" : " + waitingTime[i]);
         }
 
     }//SJF
@@ -348,8 +382,6 @@ public class Scheduler {
         int currentQuantumRemaining = 0;
         int completed = 0;
         boolean isInIdle = false;
-        boolean stateChange = false;
-        boolean repeat = false;
 
         //RR priority - go with the smallest pid
         readyQueue = new PriorityQueue<>(new Comparator<Process>() { //use next time as priority
@@ -395,11 +427,13 @@ public class Scheduler {
                             if(!currentProcess.completed()){
                                 eventQueue.add(currentProcess);
                             }else{
-                                waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                                waitingTime[pidToIndex.get(currentProcess.pid)] = curTime
+                                        + currentProcess.idleTimes.get(currentProcess.idleTimes.size()-1)
+                                        - currentProcess.arrivalTime - currentProcess.totalTime();
                                 completed++;
                             }
                         }else{
-                            waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                            waitingTime[pidToIndex.get(currentProcess.pid)] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
                             completed++;
                         }
                         currentProcess = null;
@@ -416,6 +450,7 @@ public class Scheduler {
                     }
 
                 }else if(currentProcess.actualCurrBurstLeft == 0) {// actual burst time ran out
+                    System.out.println(curTime);
                     currentProcess.currBurstIndex++;
                     if(!currentProcess.completed()){
 
@@ -426,11 +461,13 @@ public class Scheduler {
                         if(!currentProcess.completed()){
                             eventQueue.add(currentProcess);
                         }else{
-                            waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                            waitingTime[pidToIndex.get(currentProcess.pid)] = curTime
+                                    + currentProcess.idleTimes.get(currentProcess.idleTimes.size()-1)
+                                    - currentProcess.arrivalTime - currentProcess.totalTime();
                             completed++;
                         }
                     }else{
-                        waitingTime[currentProcess.pid-1] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
+                        waitingTime[pidToIndex.get(currentProcess.pid)] = curTime - currentProcess.arrivalTime - currentProcess.totalTime();
                         completed++;
                     }
                     currentProcess = null;
@@ -448,6 +485,10 @@ public class Scheduler {
                 currentProcess = readyQueue.remove();
                 currentQuantumRemaining = Q;
                 currentProcess.actualCurrBurstLeft = currentProcess.burstTimes.get(currentProcess.currBurstIndex);
+
+                if(verbose){
+                    System.out.println("\nCurrent time: " + curTime);
+                }
 
                 //print start time
                 System.out.print(currentProcess.pid + " ");
@@ -470,7 +511,7 @@ public class Scheduler {
         System.out.println("end");
         System.out.println("Waiting time:");
         for(int i = 0; i < numOfProcesses; i++){
-            System.out.println("Process " + (i+1) +" : " + waitingTime[i]);
+            System.out.println("Process " + indexToPid.get(i) +" : " + waitingTime[i]);
         }
 
     }//RR
@@ -480,9 +521,9 @@ public class Scheduler {
             Scheduler scheduler = new Scheduler(args[0]);
             ArrayList<String> files = new ArrayList<>();
 
-            int count;
+            int count = -1;
 
-            if(args[0] =="RR"){
+            if(Objects.equals(args[0], "RR")){
                 scheduler.algo = "RR";
                 scheduler.quantum = Integer.parseInt(args[1]);
                 if(Objects.equals(args[2], "verbose")){
@@ -491,7 +532,7 @@ public class Scheduler {
                 }else{
                     count = 2;
                 }
-            }else if(args[0] == "SJF"){
+            }else if(Objects.equals(args[0], "SJF")){
                 scheduler.algo = "SJF";
                 if(Objects.equals(args[1], "verbose")){
                     scheduler.verbose = true;
@@ -508,10 +549,21 @@ public class Scheduler {
                     count = 1;
                 }
             }
+
             //add files into ArrayList
             for(;count < args.length; count++){
+                Integer pid = Integer.parseInt(args[count].substring(args[count].indexOf('-') + 1,args[count].indexOf('.')));
+                scheduler.pidList.add(pid);
                 files.add(args[count]);
             }
+
+            //initialize hashmap from pid to index
+            for(int i = 0; i < scheduler.pidList.size(); i++){
+                scheduler.pidToIndex.put(scheduler.pidList.get(i),i);
+                scheduler.indexToPid.put(i,scheduler.pidList.get(i));
+            }
+
+            System.out.println("start");
             scheduler.SchedulerReader(files);
             switch (scheduler.algo){
                 case "RR":

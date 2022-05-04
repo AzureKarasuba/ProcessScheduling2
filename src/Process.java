@@ -76,6 +76,8 @@ public class Process extends Object {
 
         burstTimesForEstimate = new ArrayList<>();
 
+        currBurstIndex = 0;
+
         firstTime = true;
     }
 
